@@ -26,7 +26,7 @@ Needs CMake 3.24+, a C++20 compiler, OpenCASCADE 7.6+ and nlohmann-json.
 
 ```bash
 # Ubuntu / Debian
-sudo apt install cmake g++ nlohmann-json3-dev libtbb-dev \
+sudo apt install cmake g++ nlohmann-json3-dev libtbb-dev libgtest-dev \
   libocct-foundation-dev libocct-modeling-data-dev libocct-modeling-algorithms-dev \
   libocct-data-exchange-dev
 
@@ -35,6 +35,7 @@ sudo apt install cmake g++ nlohmann-json3-dev libtbb-dev \
 
 cmake -B build -S engine -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
+ctest --test-dir build --output-on-failure      # naming regression tests
 echo '{"jsonrpc":"2.0","id":1,"method":"makeBox","params":{"x":40,"y":20,"z":10}}' | ./build/cadx-engine
 ```
 
@@ -51,7 +52,7 @@ cd app
 CADX_ENGINE=../build/cadx-engine cargo tauri dev
 ```
 
-The window opens with a box built by the engine. Hover over faces to see their B-rep face index.
+The window opens with a filleted demo part. Change width, depth, height or fillet radius in the toolbar: the part rebuilds and the fillet stays on the same edge. Hover over a face to see its persistent name.
 
 `CADX_ENGINE` points the shell at the engine binary. In release builds it will be bundled as a sidecar.
 

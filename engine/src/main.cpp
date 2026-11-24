@@ -2,10 +2,14 @@
 // One request per line in, one response per line out. Logs go to stderr.
 
 #include "mesh.hpp"
+#include "part.hpp"
 
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <Standard_Failure.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopoDS.hxx>
 
 #include <nlohmann/json.hpp>
 
@@ -34,6 +38,28 @@ json handle(const std::string& method, const json& params) {
     const double y = params.value("y", 20.0);
     const double z = params.value("z", 10.0);
     return meshToJson(cadx::tessellate(BRepPrimAPI_MakeBox(x, y, z).Shape()));
+  }
+  if (method == "rebuild") {
+    // params: { "document": <part document, see part.hpp> }
+    const cadx::RebuildResult r = cadx::rebuild(params.at("document"));
+    json features = json::array();
+    for (const auto& f : r.features) {
+      features.push_back({{"id", f.id}, {"state", cadx::toString(f.state)}, {"message", f.message}});
+    }
+    json out{{"features", features}};
+    if (!r.body.empty()) {
+      out["mesh"] = meshToJson(cadx::tessellate(r.body.shape()));
+      // faceNames[i] names the face with faceId i (same TopExp::MapShapes order as the mesh).
+      TopTools_IndexedMapOfShape faces;
+      TopExp::MapShapes(r.body.shape(), TopAbs_FACE, faces);
+      json names = json::array();
+      for (int i = 1; i <= faces.Extent(); ++i) {
+        names.push_back(r.body.nameOf(TopoDS::Face(faces(i))).value_or("?"));
+      }
+      out["faceNames"] = names;
+      out["edgeNames"] = r.body.edgeNames();
+    }
+    return out;
   }
   if (method == "makeCylinder") {
     const double r = params.value("r", 10.0);

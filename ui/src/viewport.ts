@@ -47,7 +47,8 @@ export class Viewport {
     });
   }
 
-  show(data: MeshData): void {
+  /** Replace the body. `refit` moves the camera to frame it (first build only, so edits don't jump). */
+  show(data: MeshData, refit = true): void {
     if (this.body) this.scene.remove(this.body);
 
     const geom = new THREE.BufferGeometry();
@@ -76,7 +77,7 @@ export class Viewport {
     this.body = new THREE.Group();
     this.body.add(this.mesh, edges);
     this.scene.add(this.body);
-    this.fit();
+    if (refit) this.fit();
   }
 
   fit(): void {

@@ -31,3 +31,11 @@ body { display: flex; flex-direction: column; }
 #tree li { padding: 3px 6px; border-radius: 3px; }
 #tree li:hover { background: var(--line); }
 #viewport { flex: 1; display: block; min-width: 0; outline: none; }
+
+#toolbar label { display: inline-flex; align-items: center; gap: 4px; opacity: 0.9; }
+#toolbar input {
+  width: 56px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px;
+}
+#tree li.failed { color: #ff6b6b; }
+#tree li.suppressed { opacity: 0.5; }

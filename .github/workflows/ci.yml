@@ -13,12 +13,14 @@ jobs:
       - name: Install OCCT and tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ nlohmann-json3-dev libtbb-dev \
+          sudo apt-get install -y cmake g++ nlohmann-json3-dev libtbb-dev libgtest-dev \
             libocct-foundation-dev libocct-modeling-data-dev libocct-modeling-algorithms-dev
       - name: Build
         run: |
           cmake -B build -S engine -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j
+      - name: Naming regression tests
+        run: ctest --test-dir build --output-on-failure
       - name: Smoke test
         run: |
           out=$(echo '{"jsonrpc":"2.0","id":1,"method":"makeBox","params":{"x":40,"y":20,"z":10}}' | ./build/cadx-engine)

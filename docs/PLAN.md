@@ -41,6 +41,7 @@ The living plan, with diagrams, is the "NX-style CAD/CAM — Architecture & Plan
 | 4 Polish + drawings | Radial menus, dynamic handles, drawings, synchronous modelling | CADX is the default CAD for new parts |
 | 5 Router CAM | Setups, 2.5D ops, adaptive clearing, grblHAL post, simulation | Cut a real part on the PrintNC |
 | 6 Turning + 4th axis | Lathe-mode ops, G33/G76 threading, indexed then wrapped 4-axis | |
+| Later | Engine compiled to WebAssembly: the app on GitHub Pages and the iPad | Full editing in the browser |
 
 ## Phase 0 checklist
 
@@ -50,5 +51,20 @@ The living plan, with diagrams, is the "NX-style CAD/CAM — Architecture & Plan
 - [x] Shell: launch the engine and relay requests
 - [x] CI: build the engine (Ubuntu, system OCCT) and type-check and build the UI
 - [ ] Define JSON-RPC API v0 properly (`openDocument`, `addFeature`, `editFeature`, `rebuild`, `getMesh`, `pick`)
-- [ ] Persistent naming spike: extrude, fillet an edge, edit the sketch, check that the fillet survives
+- [x] Persistent naming spike: extrude, fillet an edge, edit the sketch, check that the fillet survives
+      (history-based names, `engine/src/naming.*`; 12 regression tests in `engine/tests/naming_test.cpp`)
 - [ ] Windows CI for the engine (vcpkg, cached)
+
+## Persistent naming (as built)
+
+- **Faces** are named by the feature that made them: `Extrude1/start`, `Extrude1/end`,
+  `Extrude1/side(Sketch1/L1)`, `Fillet1/blend(<edge name>)`, `Fillet1/corner(<vertex name>)`.
+  A face that an operation keeps or modifies keeps its name.
+- **Edges** are named by their two adjacent faces, sorted: `Extrude1/end|Extrude1/side(Sketch1/L1)`.
+  A single-face edge (seam) gets a `|seam` suffix. **Vertices** are named by their adjacent faces.
+- Fillets follow tangent chains like NX; blend faces on edges the user did not pick are named from
+  the edge that generated them.
+- A reference that no longer resolves fails that feature with a clear message
+  (`edge not found: …`) and suppresses later features. It is never rebound to a guessed edge.
+- Known limits: one extrude per part so far; two faces sharing more than one edge would give an
+  ambiguous edge name (reported as an error, not guessed).
