@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  engine-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OCCT and tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ nlohmann-json3-dev libtbb-dev \
+            libocct-foundation-dev libocct-modeling-data-dev libocct-modeling-algorithms-dev
+      - name: Build
+        run: |
+          cmake -B build -S engine -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j
+      - name: Smoke test
+        run: |
+          out=$(echo '{"jsonrpc":"2.0","id":1,"method":"makeBox","params":{"x":40,"y":20,"z":10}}' | ./build/cadx-engine)
+          echo "$out" | python3 -c "import sys,json; m=json.load(sys.stdin)['result']; f=len(set(m['faceIds'])); print('faces', f); assert f == 6"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadx-engine-linux
+          path: build/cadx-engine
+
+  ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - run: pnpm install --dir ui --frozen-lockfile
+      - run: pnpm --dir ui build
+
+  shell:
+    runs-on: ubuntu-24.04
+    needs: ui
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Placeholder frontend for compile
+        run: mkdir -p ui/dist && echo '<!doctype html>' > ui/dist/index.html
+      - run: cargo build --manifest-path app/src-tauri/Cargo.toml

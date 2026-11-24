@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CADX</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header id="toolbar">
+      <strong>CADX</strong>
+      <button id="btn-box">Box</button>
+      <button id="btn-cyl">Cylinder</button>
+      <button id="btn-fit">Fit</button>
+      <span id="status">Starting…</span>
+    </header>
+    <div id="main">
+      <aside id="navigator">
+        <h2>Part Navigator</h2>
+        <ul id="tree"></ul>
+      </aside>
+      <canvas id="viewport"></canvas>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

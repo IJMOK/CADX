@@ -1,0 +1,11 @@
+build/
+out/
+node_modules/
+dist/
+target/
+app/src-tauri/gen/
+.vscode/
+.idea/
+*.log
+.DS_Store
+vcpkg_installed/
