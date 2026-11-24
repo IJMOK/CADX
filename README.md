@@ -22,11 +22,11 @@ The engine never depends on the UI, so it can be tested on its own and later com
 
 ### Engine
 
-Needs CMake 3.24+, a C++20 compiler, OpenCASCADE 7.6+ and nlohmann-json.
+Needs CMake 3.24+, a C++20 compiler, OpenCASCADE 7.6+, nlohmann-json, Eigen 3.3+ and Boost (headers only). PlaneGCS, the sketch solver, is vendored in `engine/third_party/planegcs`.
 
 ```bash
 # Ubuntu / Debian
-sudo apt install cmake g++ nlohmann-json3-dev libtbb-dev libgtest-dev \
+sudo apt install cmake g++ nlohmann-json3-dev libtbb-dev libgtest-dev libeigen3-dev libboost-dev \
   libocct-foundation-dev libocct-modeling-data-dev libocct-modeling-algorithms-dev \
   libocct-data-exchange-dev
 
@@ -35,7 +35,7 @@ sudo apt install cmake g++ nlohmann-json3-dev libtbb-dev libgtest-dev \
 
 cmake -B build -S engine -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build --output-on-failure      # naming regression tests
+ctest --test-dir build --output-on-failure      # sketch solver + naming regression tests
 echo '{"jsonrpc":"2.0","id":1,"method":"makeBox","params":{"x":40,"y":20,"z":10}}' | ./build/cadx-engine
 ```
 
@@ -52,7 +52,7 @@ cd app
 CADX_ENGINE=../build/cadx-engine cargo tauri dev
 ```
 
-The window opens with a filleted demo part. Change width, depth, height or fillet radius in the toolbar: the part rebuilds and the fillet stays on the same edge. Hover over a face to see its persistent name.
+The window opens with a filleted demo part built from a fully constrained sketch. Change width, depth, height, fillet radius or hole diameter in the toolbar: the sketch re-solves, the part rebuilds, and the fillet stays on the same edge. Hover over a face to see its persistent name.
 
 `CADX_ENGINE` points the shell at the engine binary. In release builds it will be bundled as a sidecar.
 

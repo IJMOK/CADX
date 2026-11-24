@@ -1,5 +1,7 @@
 #include "part.hpp"
 
+#include "profile.hpp"
+
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
@@ -47,52 +49,34 @@ bool contains(const TopTools_ListOfShape& list, const TopoDS_Shape& s) {
 
 // ---------------------------------------------------------------- extrude
 
-NamedShape extrude(const json& feature, const json& document) {
+NamedShape extrude(const json& feature, const std::map<std::string, sketch::SolveResult>& sketches) {
   const std::string id = feature.at("id");
   const std::string sketchId = feature.at("sketch");
   const double distance = feature.at("distance");
   if (std::abs(distance) < 1e-6) throw FeatureError("distance must not be zero");
 
-  const json* sketch = nullptr;
-  if (document.contains("sketches")) {
-    for (const auto& s : document.at("sketches")) {
-      if (s.at("id") == sketchId) sketch = &s;
+  auto it = sketches.find(sketchId);
+  if (it == sketches.end()) throw FeatureError("sketch not found: " + sketchId);
+  const sketch::SolveResult& solved = it->second;
+  switch (solved.state) {
+    case sketch::SolveState::Solved: break;
+    case sketch::SolveState::Conflicting: {
+      std::string ids;
+      for (const auto& c : solved.conflicting) ids += (ids.empty() ? "" : ", ") + c;
+      throw FeatureError(sketchId + " has conflicting constraints: " + ids);
     }
+    case sketch::SolveState::Failed: throw FeatureError(sketchId + " could not be solved");
+    case sketch::SolveState::Invalid: throw FeatureError(sketchId + " is invalid: " + solved.message);
   }
-  if (!sketch) throw FeatureError("sketch not found: " + sketchId);
 
-  // Shared vertices, so the wire keeps our edges unchanged and each edge can
-  // be traced to the segment that made it.
-  std::map<std::pair<long long, long long>, TopoDS_Vertex> vertices;
-  auto vertexAt = [&](const json& p) {
-    const double x = p.at(0), y = p.at(1);
-    const auto key = std::make_pair(std::llround(x * 1e6), std::llround(y * 1e6));
-    auto it = vertices.find(key);
-    if (it == vertices.end()) {
-      it = vertices.emplace(key, BRepBuilderAPI_MakeVertex(gp_Pnt(x, y, 0)).Vertex()).first;
-    }
-    return it->second;
-  };
-
-  BRepBuilderAPI_MakeWire wireMaker;
-  std::vector<std::pair<TopoDS_Edge, std::string>> segmentEdges;
-  for (const auto& seg : sketch->at("segments")) {
-    const std::string segId = seg.at("id");
-    TopoDS_Vertex a = vertexAt(seg.at("a")), b = vertexAt(seg.at("b"));
-    if (a.IsSame(b)) throw FeatureError("segment " + segId + " has zero length");
-    TopoDS_Edge e = BRepBuilderAPI_MakeEdge(a, b).Edge();
-    wireMaker.Add(e);
-    if (!wireMaker.IsDone()) throw FeatureError("segment " + segId + " does not connect to the loop");
-    segmentEdges.emplace_back(e, sketchId + "/" + segId);
+  Profile profile;
+  try {
+    profile = buildProfile(solved.sketch);
+  } catch (const ProfileError& e) {
+    throw FeatureError(e.what());
   }
-  const TopoDS_Wire wire = wireMaker.Wire();
-  if (!wire.Closed()) throw FeatureError("sketch " + sketchId + " is not a closed loop");
 
-  BRepBuilderAPI_MakeFace faceMaker(wire, true);
-  if (!faceMaker.IsDone()) throw FeatureError("could not make a face from " + sketchId);
-  const TopoDS_Face base = faceMaker.Face();
-
-  BRepPrimAPI_MakePrism prism(base, gp_Vec(0, 0, distance));
+  BRepPrimAPI_MakePrism prism(profile.face, gp_Vec(0, 0, distance));
   prism.Build();
   if (!prism.IsDone()) throw FeatureError("extrude failed");
 
@@ -100,19 +84,18 @@ NamedShape extrude(const json& feature, const json& document) {
   faces.push_back({TopoDS::Face(prism.FirstShape()), id + "/start"});
   faces.push_back({TopoDS::Face(prism.LastShape()), id + "/end"});
 
-  // Side faces come from the sketch edges. The wire may hold the edges with a
-  // different orientation, so match each wire edge back to its segment.
-  for (TopExp_Explorer ex(base, TopAbs_EDGE); ex.More(); ex.Next()) {
+  // Side faces come from the sketch edges, each traced to its sketch entity.
+  for (TopExp_Explorer ex(profile.face, TopAbs_EDGE); ex.More(); ex.Next()) {
     const TopoDS_Edge& e = TopoDS::Edge(ex.Current());
-    std::string segName;
-    for (const auto& [se, name] : segmentEdges) {
-      if (se.IsSame(e)) segName = name;
+    std::string entityName;
+    for (const auto& [pe, name] : profile.edges) {
+      if (pe.IsSame(e)) entityName = name;
     }
-    if (segName.empty()) throw FeatureError("internal: lost track of a sketch edge");
+    if (entityName.empty()) throw FeatureError("internal: lost track of a sketch edge");
     const TopTools_ListOfShape& gen = prism.Generated(e);
-    if (gen.IsEmpty()) throw FeatureError("internal: no side face for " + segName);
+    if (gen.IsEmpty()) throw FeatureError("internal: no side face for " + entityName);
     for (const TopoDS_Shape& f : gen) {
-      if (f.ShapeType() == TopAbs_FACE) faces.push_back({TopoDS::Face(f), id + "/side(" + segName + ")"});
+      if (f.ShapeType() == TopAbs_FACE) faces.push_back({TopoDS::Face(f), id + "/side(" + entityName + ")"});
     }
   }
   return NamedShape(prism.Shape(), std::move(faces));
@@ -199,6 +182,23 @@ RebuildResult rebuild(const json& document) {
   RebuildResult out;
   bool failedUpstream = false;
 
+  // Solve every sketch once; features use the solved geometry.
+  std::map<std::string, sketch::SolveResult> sketches;
+  if (document.contains("sketches")) {
+    for (const auto& js : document.at("sketches")) {
+      sketch::SolveResult r;
+      try {
+        r = sketch::solve(sketch::fromJson(js));
+      } catch (const std::exception& e) {
+        r.state = sketch::SolveState::Invalid;
+        r.sketch.id = js.value("id", std::string("?"));
+        r.message = e.what();
+      }
+      out.sketches.push_back(r);
+      sketches[r.sketch.id] = r;
+    }
+  }
+
   const json noFeatures = json::array();
   const json& featureList = document.contains("features") ? document.at("features") : noFeatures;
   for (const auto& feature : featureList) {
@@ -217,7 +217,7 @@ RebuildResult rebuild(const json& document) {
       NamedShape next;
       if (type == "extrude") {
         if (!out.body.empty()) throw FeatureError("only one extrude (the base body) is supported so far");
-        next = extrude(feature, document);
+        next = extrude(feature, sketches);
       } else if (type == "fillet") {
         next = fillet(feature, out.body);
       } else {

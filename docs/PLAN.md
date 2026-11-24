@@ -18,7 +18,7 @@ The living plan, with diagrams, is the "NX-style CAD/CAM — Architecture & Plan
 | UI | TypeScript, Vite, three.js |
 | Kernel | OpenCASCADE 7.6+ (LGPL, linked dynamically) |
 | Engine | C++20, CMake, vcpkg or system packages |
-| Sketch solver | PlaneGCS (LGPL) behind our own interface |
+| Sketch solver | PlaneGCS from FreeCAD 1.0 (LGPL), vendored, behind `cadx::sketch::solve` |
 | Engine to UI link | Line-delimited JSON-RPC 2.0 over stdio, binary mesh buffers later |
 | Tests | GoogleTest (engine), Vitest + Playwright (UI) |
 
@@ -54,6 +54,22 @@ The living plan, with diagrams, is the "NX-style CAD/CAM — Architecture & Plan
 - [x] Persistent naming spike: extrude, fillet an edge, edit the sketch, check that the fillet survives
       (history-based names, `engine/src/naming.*`; 12 regression tests in `engine/tests/naming_test.cpp`)
 - [ ] Windows CI for the engine (vcpkg, cached)
+
+## Phase 1 checklist
+
+- [x] Sketch model and solver interface (`engine/src/sketch/`), PlaneGCS vendored behind it
+- [x] Constraints: coincident, horizontal, vertical, parallel, perpendicular, tangent (edge and
+      endpoint-to-endpoint), equal, pointOn, midpoint, symmetric, distance, distanceX/Y, angle,
+      radius, diameter, fix; built-in `origin`, `xaxis`, `yaxis`
+- [x] DOF count, conflicting and redundant constraint reporting
+- [x] Profiles from solved sketches: lines, arcs, circles in any order; outer loop plus holes;
+      construction geometry ignored
+- [x] `solveSketch` RPC; `rebuild` solves sketches and reports their state
+- [x] 30 engine tests (sketch solver, naming, solved-sketch features), all solids checked valid
+- [ ] Sketch mode in the UI: draw lines/arcs/circles, snaps, auto-constraints, drag, dimensions
+- [ ] Revolve and cut features; more than one extrude per part
+- [ ] Parameters and expressions table
+- [ ] Save and open `.cadx` files
 
 ## Persistent naming (as built)
 

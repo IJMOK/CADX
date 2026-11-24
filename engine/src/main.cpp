@@ -3,6 +3,7 @@
 
 #include "mesh.hpp"
 #include "part.hpp"
+#include "sketch/sketch.hpp"
 
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
@@ -39,6 +40,10 @@ json handle(const std::string& method, const json& params) {
     const double z = params.value("z", 10.0);
     return meshToJson(cadx::tessellate(BRepPrimAPI_MakeBox(x, y, z).Shape()));
   }
+  if (method == "solveSketch") {
+    // params: { "sketch": <sketch, see sketch/sketch.hpp> }
+    return cadx::sketch::toJson(cadx::sketch::solve(cadx::sketch::fromJson(params.at("sketch"))));
+  }
   if (method == "rebuild") {
     // params: { "document": <part document, see part.hpp> }
     const cadx::RebuildResult r = cadx::rebuild(params.at("document"));
@@ -46,7 +51,9 @@ json handle(const std::string& method, const json& params) {
     for (const auto& f : r.features) {
       features.push_back({{"id", f.id}, {"state", cadx::toString(f.state)}, {"message", f.message}});
     }
-    json out{{"features", features}};
+    json sketches = json::array();
+    for (const auto& sk : r.sketches) sketches.push_back(cadx::sketch::toJson(sk));
+    json out{{"features", features}, {"sketches", sketches}};
     if (!r.body.empty()) {
       out["mesh"] = meshToJson(cadx::tessellate(r.body.shape()));
       // faceNames[i] names the face with faceId i (same TopExp::MapShapes order as the mesh).

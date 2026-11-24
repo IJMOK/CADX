@@ -3,6 +3,9 @@
   "version-string": "0.1.0",
   "dependencies": [
     "opencascade",
-    "nlohmann-json"
+    "nlohmann-json",
+    "eigen3",
+    "boost-graph",
+    "boost-math"
   ]
 }

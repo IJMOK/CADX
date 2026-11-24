@@ -4,6 +4,7 @@
 #include "part.hpp"
 
 #include <BRepBndLib.hxx>
+#include <BRepCheck_Analyzer.hxx>
 #include <Bnd_Box.hxx>
 #include <gtest/gtest.h>
 
@@ -20,7 +21,7 @@ const std::string kTopFrontEdge = "Extrude1/end|Extrude1/side(Sketch1/L1)";
 const std::string kBlend = "Fillet1/blend(" + kTopFrontEdge + ")";
 
 json seg(const std::string& id, double ax, double ay, double bx, double by) {
-  return {{"id", id}, {"a", json::array({ax, ay})}, {"b", json::array({bx, by})}};
+  return {{"id", id}, {"type", "line"}, {"a", json::array({ax, ay})}, {"b", json::array({bx, by})}};
 }
 
 // Rectangle w x h: L1 front (y=0), L2 right, L3 back, L4 left.
@@ -33,7 +34,7 @@ json part(const json& segments, const json& extraFeatures = json::array()) {
   json features = json::array(
       {{{"id", "Extrude1"}, {"type", "extrude"}, {"sketch", "Sketch1"}, {"distance", 10}}});
   for (const auto& f : extraFeatures) features.push_back(f);
-  return {{"sketches", json::array({{{"id", "Sketch1"}, {"segments", segments}}})},
+  return {{"sketches", json::array({{{"id", "Sketch1"}, {"entities", segments}}})},
           {"features", features}};
 }
 
@@ -58,6 +59,9 @@ Bnd_Box boundsOf(const RebuildResult& r, const std::string& faceName) {
 void expectAllOk(const RebuildResult& r) {
   for (const auto& f : r.features) {
     EXPECT_EQ(f.state, FeatureState::Ok) << f.id << ": " << f.message;
+  }
+  if (!r.body.empty()) {
+    EXPECT_TRUE(BRepCheck_Analyzer(r.body.shape()).IsValid()) << "OCCT says the solid is invalid";
   }
 }
 
@@ -198,5 +202,118 @@ TEST(Naming, FailureSuppressesDownstreamFeatures) {
 TEST(Naming, OversizedFilletFailsWithoutCrashing) {
   const auto r = rebuild(part(rectangle(40, 20), json::array({filletOn("Fillet1", kTopFrontEdge, 50)})));
   EXPECT_EQ(r.features[1].state, FeatureState::Failed);
+  EXPECT_EQ(r.body.faces().size(), 6u);
+}
+
+// ------------------------------------------------- solved, constrained sketches
+
+namespace {
+
+json con(const std::string& id, const std::string& type, std::vector<std::string> refs, double value = 0) {
+  json c{{"id", id}, {"type", type}, {"refs", refs}};
+  if (value != 0) c["value"] = value;
+  return c;
+}
+
+// A roughly drawn rectangle, constrained to w x h at the origin.
+json constrainedPart(double w, double h, const json& extraFeatures, const json& extraEntities = json::array(),
+                     const json& extraConstraints = json::array()) {
+  json entities = json::array({seg("L1", 0.4, -0.3, 37, 1), seg("L2", 37, 1, 42, 23), seg("L3", 42, 23, -2, 18),
+                               seg("L4", -2, 18, 0.4, -0.3)});
+  for (const auto& e : extraEntities) entities.push_back(e);
+  json constraints = json::array({con("c1", "coincident", {"L1.end", "L2.start"}),
+                                  con("c2", "coincident", {"L2.end", "L3.start"}),
+                                  con("c3", "coincident", {"L3.end", "L4.start"}),
+                                  con("c4", "coincident", {"L4.end", "L1.start"}),
+                                  con("h1", "horizontal", {"L1"}), con("h2", "horizontal", {"L3"}),
+                                  con("v1", "vertical", {"L2"}), con("v2", "vertical", {"L4"}),
+                                  con("o1", "coincident", {"L1.start", "origin"}),
+                                  con("dW", "distance", {"L1"}, w), con("dH", "distance", {"L2"}, h)});
+  for (const auto& c : extraConstraints) constraints.push_back(c);
+  json features = json::array({{{"id", "Extrude1"}, {"type", "extrude"}, {"sketch", "Sketch1"}, {"distance", 10}}});
+  for (const auto& f : extraFeatures) features.push_back(f);
+  return {{"sketches", json::array({{{"id", "Sketch1"}, {"entities", entities}, {"constraints", constraints}}})},
+          {"features", features}};
+}
+
+}  // namespace
+
+TEST(SolvedSketch, FilletSurvivesEditingASketchDimension) {
+  for (auto [w, h] : {std::pair{40.0, 20.0}, {75.0, 12.0}}) {
+    const auto r = rebuild(constrainedPart(w, h, json::array({filletOn("Fillet1", kTopFrontEdge)})));
+    SCOPED_TRACE("dimensions " + std::to_string(w) + " x " + std::to_string(h));
+    ASSERT_EQ(r.sketches.size(), 1u);
+    EXPECT_EQ(r.sketches[0].state, sketch::SolveState::Solved);
+    EXPECT_EQ(r.sketches[0].dof, 0);
+    expectAllOk(r);
+    expectBlendOnTopFrontEdge(r);
+    double x0, y0, z0, x1, y1, z1;
+    boundsOf(r, kBlend).Get(x0, y0, z0, x1, y1, z1);
+    EXPECT_NEAR(x1 - x0, w, 0.05);  // blend runs the full (new) width
+  }
+}
+
+TEST(SolvedSketch, CircleInsideBecomesAHoleWithItsOwnName) {
+  const json circle = {{"id", "C1"}, {"type", "circle"}, {"center", {10, 8}}, {"radius", 3}};
+  const json place = json::array({con("cx", "distanceX", {"C1.center"}, 30), con("cy", "distanceY", {"C1.center"}, 10),
+                                  con("cd", "diameter", {"C1"}, 8)});
+  const auto r = rebuild(constrainedPart(40, 20, json::array(), json::array({circle}), place));
+  expectAllOk(r);
+  EXPECT_EQ(r.body.faces().size(), 7u);
+  const Bnd_Box box = boundsOf(r, "Extrude1/side(Sketch1/C1)");
+  ASSERT_FALSE(box.IsVoid());
+  double x0, y0, z0, x1, y1, z1;
+  box.Get(x0, y0, z0, x1, y1, z1);
+  EXPECT_NEAR((x0 + x1) / 2, 30, 0.05);
+  EXPECT_NEAR(x1 - x0, 8, 0.05);
+  // The hole wall and the top face share a named edge (a circle edge has a seam too).
+  const auto edges = r.body.edgeNames();
+  EXPECT_NE(std::find(edges.begin(), edges.end(), "Extrude1/end|Extrude1/side(Sketch1/C1)"), edges.end());
+}
+
+TEST(SolvedSketch, SlotProfileWithArcs) {
+  const json entities = json::array(
+      {seg("T", 0, 10, 50, 10), seg("B", 50, -10, 0, -10),
+       {{"id", "AR"}, {"type", "arc"}, {"center", {50, 0}}, {"radius", 10}, {"start", -90}, {"end", 90}},
+       {{"id", "AL"}, {"type", "arc"}, {"center", {0, 0}}, {"radius", 10}, {"start", 90}, {"end", 270}}});
+  const json constraints = json::array(
+      {con("t1", "tangent", {"T.end", "AR.end"}), con("t2", "tangent", {"AR.start", "B.start"}),
+       con("t3", "tangent", {"B.end", "AL.end"}), con("t4", "tangent", {"AL.start", "T.start"}),
+       con("h1", "horizontal", {"T"}), con("o1", "coincident", {"AL.center", "origin"}),
+       con("r1", "radius", {"AL"}, 6), con("eq", "equal", {"AL", "AR"}),
+       con("len", "distance", {"AL.center", "AR.center"}, 30)});
+  const json doc = {{"sketches", json::array({{{"id", "Sketch1"}, {"entities", entities}, {"constraints", constraints}}})},
+                    {"features", json::array({{{"id", "Extrude1"}, {"type", "extrude"}, {"sketch", "Sketch1"}, {"distance", 5}}})}};
+  const auto r = rebuild(doc);
+  expectAllOk(r);
+  EXPECT_EQ(faceNames(r), (std::set<std::string>{"Extrude1/start", "Extrude1/end", "Extrude1/side(Sketch1/T)",
+                                                 "Extrude1/side(Sketch1/B)", "Extrude1/side(Sketch1/AL)",
+                                                 "Extrude1/side(Sketch1/AR)"}));
+  double x0, y0, z0, x1, y1, z1;
+  boundsOf(r, "Extrude1/side(Sketch1/AR)").Get(x0, y0, z0, x1, y1, z1);
+  EXPECT_NEAR(x1, 36, 0.05);  // right arc: centre 30, radius 6
+}
+
+TEST(SolvedSketch, OpenProfileFailsTheExtrudeWithAReason) {
+  json segments = rectangle(40, 20);
+  segments.erase(segments.begin() + 2);  // remove L3
+  const auto r = rebuild(part(segments));
+  EXPECT_EQ(r.features[0].state, FeatureState::Failed);
+  EXPECT_NE(r.features[0].message.find("open"), std::string::npos) << r.features[0].message;
+}
+
+TEST(SolvedSketch, ConflictingSketchFailsTheExtrudeAndNamesTheConstraints) {
+  const auto r = rebuild(constrainedPart(40, 20, json::array(), json::array(),
+                                         json::array({con("bad", "distance", {"L3"}, 55)})));
+  EXPECT_EQ(r.sketches[0].state, sketch::SolveState::Conflicting);
+  EXPECT_EQ(r.features[0].state, FeatureState::Failed);
+  EXPECT_NE(r.features[0].message.find("bad"), std::string::npos) << r.features[0].message;
+}
+
+TEST(SolvedSketch, ConstructionGeometryDoesNotMakeFaces) {
+  json helper = seg("K1", 0, 0, 40, 20);
+  helper["construction"] = true;
+  const auto r = rebuild(constrainedPart(40, 20, json::array(), json::array({helper})));
+  expectAllOk(r);
   EXPECT_EQ(r.body.faces().size(), 6u);
 }

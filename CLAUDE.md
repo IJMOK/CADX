@@ -7,3 +7,5 @@
 - C++: C++20, OCCT handles via `Handle(T)`, no exceptions crossing the RPC boundary; catch `Standard_Failure` and return a JSON-RPC error.
 - TypeScript: strict mode; three.js for rendering; no UI framework yet (choose before Phase 1 dialogs).
 - Units inside the engine are millimetres.
+- Only `engine/src/sketch/sketch_solver_planegcs.cpp` may include PlaneGCS headers; everything else uses `sketch/sketch.hpp`.
+- `engine/third_party/` is vendored upstream code: don't edit it, shim around it.

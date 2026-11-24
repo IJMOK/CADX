@@ -3,17 +3,18 @@
 // rebuilt from its sketches and features, and every face gets a persistent
 // name on the way (see naming.hpp).
 //
-// Document JSON (Phase 1 spike):
+// Document JSON:
 // {
-//   "sketches": [{ "id": "Sketch1",
-//                  "segments": [{ "id": "L1", "a": [0,0], "b": [40,0] }, ...] }],
+//   "sketches": [ <sketch, see sketch/sketch.hpp> ],
 //   "features": [{ "id": "Extrude1", "type": "extrude", "sketch": "Sketch1", "distance": 10 },
 //                { "id": "Fillet1", "type": "fillet", "radius": 2,
 //                  "edges": ["Extrude1/end|Extrude1/side(Sketch1/L1)"] }]
 // }
-// Sketches lie on the XY plane; segments must form one closed loop, in order.
+// Sketches lie on the XY plane. Each is solved, then its lines, arcs and circles
+// are joined into one region (outer loop plus holes) for extrude.
 
 #include "naming.hpp"
+#include "sketch/sketch.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -31,6 +32,7 @@ struct FeatureStatus {
 };
 
 struct RebuildResult {
+  std::vector<sketch::SolveResult> sketches;  // one per sketch, solved
   NamedShape body;                     // the last good body
   std::vector<FeatureStatus> features; // one per feature, in tree order
 };
