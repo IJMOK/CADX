@@ -5,7 +5,9 @@
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <Geom_Circle.hxx>
+#include <BRep_Builder.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
 #include <TopoDS_Vertex.hxx>
 #include <TopoDS_Wire.hxx>
 #include <gp_Ax2.hxx>
@@ -158,15 +160,16 @@ Profile buildProfile(const sketch::Sketch& s) {
   if (loops.empty()) throw ProfileError("sketch " + s.id + " has no closed profile");
   for (auto& l : loops) l.area = signedArea(l.polygon);
 
-  // 4. Largest loop is the outer boundary; all others must be holes inside it.
+  // 4. Nesting: each loop's parent is the smallest loop containing it.
+  //    Even depth = outer boundary of a region, odd depth = a hole in its parent.
   std::sort(loops.begin(), loops.end(), [](const Loop& a, const Loop& b) { return std::abs(a.area) > std::abs(b.area); });
-  for (std::size_t i = 1; i < loops.size(); ++i) {
-    if (!inside(loops[i].polygon.front(), loops[0].polygon)) {
-      throw ProfileError("sketch " + s.id + " has separate profiles; only one region (with holes) is supported so far");
-    }
-    for (std::size_t j = 1; j < loops.size(); ++j) {
-      if (i != j && inside(loops[i].polygon.front(), loops[j].polygon)) {
-        throw ProfileError("sketch " + s.id + " has nested holes; not supported yet");
+  std::vector<int> parent(loops.size(), -1), depth(loops.size(), 0);
+  for (std::size_t i = 0; i < loops.size(); ++i) {
+    for (std::size_t j = i; j-- > 0;) {  // smaller-index loops are larger; scan from smallest
+      if (inside(loops[i].polygon.front(), loops[j].polygon)) {
+        parent[i] = static_cast<int>(j);
+        depth[i] = depth[j] + 1;
+        break;
       }
     }
   }
@@ -207,17 +210,31 @@ Profile buildProfile(const sketch::Sketch& s) {
     return mw.Wire();
   };
 
-  // Outer boundary counter-clockwise, holes clockwise.
-  TopoDS_Wire outer = wireOf(loops[0]);
-  if (loops[0].area < 0) outer.Reverse();
-  BRepBuilderAPI_MakeFace mf(gp_Pln(gp::Origin(), gp::DZ()), outer, true);
-  for (std::size_t i = 1; i < loops.size(); ++i) {
+  // Outer boundaries counter-clockwise, holes clockwise.
+  std::vector<int> faceOf(loops.size(), -1);
+  std::vector<BRepBuilderAPI_MakeFace> makers;
+  for (std::size_t i = 0; i < loops.size(); ++i) {
+    if (depth[i] % 2 != 0) continue;
+    TopoDS_Wire outer = wireOf(loops[i]);
+    if (loops[i].area < 0) outer.Reverse();
+    makers.emplace_back(gp_Pln(gp::Origin(), gp::DZ()), outer, true);
+    faceOf[i] = static_cast<int>(makers.size() - 1);
+  }
+  for (std::size_t i = 0; i < loops.size(); ++i) {
+    if (depth[i] % 2 == 0) continue;
     TopoDS_Wire hole = wireOf(loops[i]);
     if (loops[i].area > 0) hole.Reverse();
-    mf.Add(hole);
+    makers[faceOf[parent[i]]].Add(hole);
   }
-  if (!mf.IsDone()) throw ProfileError("could not make a face from " + s.id);
-  out.face = mf.Face();
+  BRep_Builder builder;
+  TopoDS_Compound compound;
+  builder.MakeCompound(compound);
+  for (auto& mf : makers) {
+    if (!mf.IsDone()) throw ProfileError("could not make a face from " + s.id);
+    out.faces.push_back(mf.Face());
+    builder.Add(compound, mf.Face());
+  }
+  out.shape = out.faces.size() == 1 ? TopoDS_Shape(out.faces.front()) : TopoDS_Shape(compound);
   return out;
 }
 

@@ -9,3 +9,8 @@ app/src-tauri/gen/
 *.log
 .DS_Store
 vcpkg_installed/
+
+# Windows build outputs and staged bundle inputs
+build-win/
+app/src-tauri/binaries/
+app/src-tauri/engine-dlls/

@@ -1,0 +1,64 @@
+name: Windows installer
+
+# Builds the engine against prebuilt OCCT 7.9.3, runs the engine tests and
+# packages the NSIS installer. Run by hand, or by pushing a v* tag.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  installer:
+    runs-on: windows-2022
+    env:
+      VCPKG_ROOT: C:\vcpkg
+      OCCT_URL: https://github.com/Open-Cascade-SAS/OCCT/releases/download/V7_9_3/opencascade-7.9.3-vc14-64-combined.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache OCCT
+        id: occt
+        uses: actions/cache@v4
+        with:
+          path: C:\deps\occt
+          key: occt-7.9.3-vc14-64-combined
+
+      - name: Download OCCT
+        if: steps.occt.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\deps\occt | Out-Null
+          Invoke-WebRequest $env:OCCT_URL -OutFile C:\deps\occt.zip
+          Expand-Archive C:\deps\occt.zip -DestinationPath C:\deps\occt
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-json-eigen-boostgraph-gtest-v1
+
+      - name: vcpkg packages
+        shell: pwsh
+        run: C:\vcpkg\vcpkg.exe install nlohmann-json eigen3 boost-graph boost-math gtest --triplet x64-windows
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build, test and package
+        shell: pwsh
+        run: .\scripts\build-windows.ps1 -OcctDir C:\deps\occt\opencascade-7.9.3-vc14-64 -VcpkgRoot C:\vcpkg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadx-windows-installer
+          path: app/src-tauri/target/release/bundle/nsis/*.exe

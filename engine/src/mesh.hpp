@@ -14,6 +14,7 @@ struct Mesh {
   std::vector<std::uint32_t> indices;  // 3 per triangle
   std::vector<std::uint32_t> faceIds;  // 1 per triangle: index of the B-rep face it came from
   std::vector<float> edges;         // line segments, xyz xyz per segment (B-rep edges)
+  std::vector<std::uint32_t> edgeIds;  // 1 per segment: index of the B-rep edge (TopExp::MapShapes order)
 };
 
 // Tessellate a shape. linearDeflection is in mm.

@@ -3,6 +3,7 @@
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
 
@@ -67,6 +68,21 @@ std::vector<TopoDS_Edge> NamedShape::findEdges(const std::string& name) const {
   for (int i = 1; i <= map.Extent(); ++i) {
     auto n = joinAdjacent(*this, map(i));
     if (n && *n == name) out.push_back(TopoDS::Edge(map.FindKey(i)));
+  }
+  return out;
+}
+
+std::vector<std::string> NamedShape::edgeNamesIndexed() const {
+  TopTools_IndexedMapOfShape edges;
+  TopExp::MapShapes(shape_, TopAbs_EDGE, edges);
+  TopTools_IndexedDataMapOfShapeListOfShape map;
+  TopExp::MapShapesAndUniqueAncestors(shape_, TopAbs_EDGE, TopAbs_FACE, map);
+  std::vector<std::string> out;
+  out.reserve(edges.Extent());
+  for (int i = 1; i <= edges.Extent(); ++i) {
+    const int k = map.FindIndex(edges(i));
+    auto n = k ? joinAdjacent(*this, map(k)) : std::nullopt;
+    out.push_back(n.value_or(""));
   }
   return out;
 }

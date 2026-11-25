@@ -57,12 +57,15 @@ Mesh tessellate(const TopoDS_Shape& shape, double linearDeflection,
   }
 
   // B-rep edges as polylines, taken from the triangulation of an adjacent face.
+  TopTools_IndexedMapOfShape edgeMap;
+  TopExp::MapShapes(shape, TopAbs_EDGE, edgeMap);
   TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
   TopExp::MapShapesAndAncestors(shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
-  for (int ei = 1; ei <= edgeFaces.Extent(); ++ei) {
-    const TopoDS_Edge& edge = TopoDS::Edge(edgeFaces.FindKey(ei));
-    if (BRep_Tool::Degenerated(edge) || edgeFaces(ei).IsEmpty()) continue;
-    const TopoDS_Face& face = TopoDS::Face(edgeFaces(ei).First());
+  for (int ei = 1; ei <= edgeMap.Extent(); ++ei) {
+    const TopoDS_Edge& edge = TopoDS::Edge(edgeMap(ei));
+    const int fi = edgeFaces.FindIndex(edge);
+    if (BRep_Tool::Degenerated(edge) || fi == 0 || edgeFaces(fi).IsEmpty()) continue;
+    const TopoDS_Face& face = TopoDS::Face(edgeFaces(fi).First());
 
     TopLoc_Location loc;
     Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(face, loc);
@@ -81,6 +84,7 @@ Mesh tessellate(const TopoDS_Shape& shape, double linearDeflection,
         out.edges.push_back(static_cast<float>(p.Y()));
         out.edges.push_back(static_cast<float>(p.Z()));
       }
+      out.edgeIds.push_back(static_cast<std::uint32_t>(ei - 1));
     }
   }
 

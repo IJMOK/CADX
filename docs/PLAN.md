@@ -20,7 +20,8 @@ The living plan, with diagrams, is the "NX-style CAD/CAM — Architecture & Plan
 | Engine | C++20, CMake, vcpkg or system packages |
 | Sketch solver | PlaneGCS from FreeCAD 1.0 (LGPL), vendored, behind `cadx::sketch::solve` |
 | Engine to UI link | Line-delimited JSON-RPC 2.0 over stdio, binary mesh buffers later |
-| Tests | GoogleTest (engine), Vitest + Playwright (UI) |
+| Tests | GoogleTest (engine), Rust unit tests (shell); Vitest + Playwright (UI) still to come |
+| UI toolkit | None: strict TypeScript with a small DOM helper (`ui/src/dom.ts`) |
 
 ## Data model
 
@@ -50,9 +51,13 @@ The living plan, with diagrams, is the "NX-style CAD/CAM — Architecture & Plan
 - [x] UI: three.js viewport with orbit, edges and face picking
 - [x] Shell: launch the engine and relay requests
 - [x] CI: build the engine (Ubuntu, system OCCT) and type-check and build the UI
-- [ ] Define JSON-RPC API v0 properly (`openDocument`, `addFeature`, `editFeature`, `rebuild`, `getMesh`, `pick`)
+- [x] JSON-RPC API v0 (`engine/src/rpc.hpp`): engine-owned document with undo/redo, `newDocument`, `openDocument`,
+      `addFeature`, `editFeature`, `deleteFeature`, `moveFeature`, `setParameters`, `setRollback`, `preview`,
+      `solveSketch`, `measure`, `exportFile`, `importFile`. Every change returns the full state (mesh with face
+      and edge ids, persistent names, feature and sketch status). Picking happens in the UI against those ids.
 - [x] Persistent naming spike: extrude, fillet an edge, edit the sketch, check that the fillet survives
       (history-based names, `engine/src/naming.*`; 12 regression tests in `engine/tests/naming_test.cpp`)
+- [x] Windows build: `scripts/build-windows.ps1` (prebuilt OCCT 7.9.3 + vcpkg) builds, tests and packages an NSIS installer
 - [ ] Windows CI for the engine (vcpkg, cached)
 
 ## Phase 1 checklist
@@ -66,10 +71,32 @@ The living plan, with diagrams, is the "NX-style CAD/CAM — Architecture & Plan
       construction geometry ignored
 - [x] `solveSketch` RPC; `rebuild` solves sketches and reports their state
 - [x] 30 engine tests (sketch solver, naming, solved-sketch features), all solids checked valid
-- [ ] Sketch mode in the UI: draw lines/arcs/circles, snaps, auto-constraints, drag, dimensions
-- [ ] Revolve and cut features; more than one extrude per part
-- [ ] Parameters and expressions table
-- [ ] Save and open `.cadx` files
+- [x] Sketch mode in the UI: lines, rectangles, circles, arcs, points, construction; point/curve/grid snaps;
+      auto coincident, point-on, horizontal and vertical; all constraint types; smart dimensions with
+      expressions; live drag; local undo; DOF and conflict display
+- [x] Sketches in the feature tree, on XY/XZ/YZ, offset datum planes or planar faces (`plane` spec)
+- [x] Revolve and cut features; any number of solid features (unite, subtract, intersect)
+- [x] Sketches with several separate regions and islands
+- [x] Parameters and expressions table (`engine/src/expr.*`), usable in any feature value or dimension
+- [x] Save and open `.cadx` files (zip: `manifest.json` + `part.json`, versioned); bare `.json` also opens
+- [x] Part navigator: edit in place with live preview, suppress, rename, reorder, delete, roll back and insert
+- [x] Naming regression suite passes (gate)
+
+## Phase 2 checklist
+
+- [x] Edge blend and chamfer (history naming via `engine/src/history.*`)
+- [x] Shell (remove faces, inward thickness)
+- [x] Holes: simple, counterbore, countersink, drill tip, blind or through, at every point of a sketch
+- [x] Linear (one or two directions) and circular patterns of features or the whole body
+- [x] Mirror features or the whole body about a plane or planar face
+- [x] Datum planes (offset from a base plane, datum or face, flippable)
+- [x] Primitives: block, cylinder, sphere, cone
+- [x] STEP AP214 / IGES / STL / BREP export; STEP / IGES / BREP import (stored in the part as BREP text)
+- [x] Measure: volume, area, mass by material, centre of mass, bounding box
+- [ ] Datum axes and points; plane at an angle; plane through three points
+- [ ] Variable-radius blends, face blends, draft, sweep, loft, thread features
+- [ ] Project body edges into a sketch; sketch fillet/trim/extend/offset
+- [ ] Model a real PrintNC part (gate)
 
 ## Persistent naming (as built)
 
@@ -82,5 +109,13 @@ The living plan, with diagrams, is the "NX-style CAD/CAM — Architecture & Plan
   the edge that generated them.
 - A reference that no longer resolves fails that feature with a clear message
   (`edge not found: …`) and suppresses later features. It is never rebound to a guessed edge.
-- Known limits: one extrude per part so far; two faces sharing more than one edge would give an
-  ambiguous edge name (reported as an error, not guessed).
+- Booleans, blends, chamfers, shells, patterns and mirrors name their results from OCCT history in one
+  place (`engine/src/history.*`): unchanged and modified faces keep their names, faces made from an edge
+  are `<feature>/blend(<edge>)`, from a vertex `<feature>/corner(<vertex>)`, a face moved off its surface
+  (a shell's inner wall) `<feature>/offset(<face>)`. A geometric fallback and finally `<feature>/face<n>`
+  make sure every face has a name.
+- Pattern and mirror copies are prefixed: `Pattern1[2]/Hole1/wall(P1)`, `Mirror1/Extrude1/end`.
+- Hole faces: `Hole1/wall(P1)`, `/bottom`, `/tip`, `/cbWall`, `/cbFloor`, `/countersink`.
+  Primitive faces: `Box1/top|bottom|front|back|left|right`, `Cylinder1/side|top|bottom`, `Sphere1/surface`.
+- Known limits: two faces sharing more than one edge give an ambiguous edge name, and a face split in two
+  by a cut gives both halves the same name; both are reported as errors when referenced, never guessed.

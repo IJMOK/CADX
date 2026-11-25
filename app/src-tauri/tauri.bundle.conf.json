@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "CADX",
+    "category": "Graphics and Design",
+    "shortDescription": "Parametric CAD with persistent naming",
+    "longDescription": "CADX is an NX-style parametric CAD system: constrained sketches, solid features with full history, persistent naming, parameters, STEP/IGES/STL exchange.",
+    "copyright": "CADX contributors. OpenCASCADE and PlaneGCS are LGPL 2.1.",
+    "externalBin": ["binaries/cadx-engine"],
+    "resources": { "engine-dlls/*.dll": "./" },
+    "fileAssociations": [
+      { "ext": ["cadx"], "name": "CADX part", "description": "CADX part", "role": "Editor", "mimeType": "application/x-cadx" }
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      },
+      "webviewInstallMode": { "type": "downloadBootstrapper" }
+    }
+  }
+}

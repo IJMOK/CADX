@@ -44,6 +44,10 @@ class NamedShape {
   // All edges whose name equals `name` (normally exactly one).
   std::vector<TopoDS_Edge> findEdges(const std::string& name) const;
 
+  // Name of every edge in TopExp::MapShapes(shape, EDGE) order ("" if unnamed);
+  // index i matches Mesh::edgeIds.
+  std::vector<std::string> edgeNamesIndexed() const;
+
   // Every edge name, for debugging and the UI.
   std::vector<std::string> edgeNames() const;
 

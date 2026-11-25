@@ -14,12 +14,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake g++ nlohmann-json3-dev libtbb-dev libgtest-dev libeigen3-dev libboost-dev \
-            libocct-foundation-dev libocct-modeling-data-dev libocct-modeling-algorithms-dev
+            libocct-foundation-dev libocct-modeling-data-dev libocct-modeling-algorithms-dev             libocct-data-exchange-dev
       - name: Build
         run: |
           cmake -B build -S engine -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j
-      - name: Naming regression tests
+      - name: Engine tests (naming, sketch, features, document)
         run: ctest --test-dir build --output-on-failure
       - name: Smoke test
         run: |
@@ -61,3 +61,4 @@ jobs:
       - name: Placeholder frontend for compile
         run: mkdir -p ui/dist && echo '<!doctype html>' > ui/dist/index.html
       - run: cargo build --manifest-path app/src-tauri/Cargo.toml
+      - run: cargo test --manifest-path app/src-tauri/Cargo.toml

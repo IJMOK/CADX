@@ -7,23 +7,22 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header id="toolbar">
-      <strong>CADX</strong>
-      <label>Width <input id="p-width" type="number" value="40" step="1" min="1" /> mm</label>
-      <label>Depth <input id="p-depth" type="number" value="20" step="1" min="1" /> mm</label>
-      <label>Height <input id="p-height" type="number" value="10" step="1" min="1" /> mm</label>
-      <label>Fillet <input id="p-radius" type="number" value="2" step="0.5" min="0.1" /> mm</label>
-      <label>Hole ⌀ <input id="p-hole" type="number" value="6" step="0.5" min="0" /> mm</label>
-      <button id="btn-fit">Fit</button>
-      <span id="status">Starting…</span>
-    </header>
+    <header id="ribbon"></header>
+    <header id="sketch-bar" style="display: none"></header>
     <div id="main">
       <aside id="navigator">
         <h2>Part Navigator</h2>
         <ul id="tree"></ul>
       </aside>
-      <canvas id="viewport"></canvas>
+      <div id="view-wrap">
+        <canvas id="viewport" tabindex="0"></canvas>
+      </div>
+      <aside id="task-panel"></aside>
     </div>
+    <footer id="statusbar">
+      <span id="status-text">Starting…</span>
+      <span id="status-pick"></span>
+    </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
